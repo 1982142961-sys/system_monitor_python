@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统监控仪表盘</title>
+    <!-- ECharts CDN，无需本地安装 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- ========== 顶部标题栏 ========== -->
+    <div class="header">
+        <h1>系统资源监控</h1>
+        <div class="header-info">
+            <span id="sys-hostname">--</span>
+            <span id="sys-os">--</span>
+            <span id="sys-uptime">--</span>
+            <span id="sys-time">--</span>
+        </div>
+    </div>
+
+    <!-- ========== 主要图表区域（CSS Grid 布局） ========== -->
+    <div class="grid">
+
+        <!-- 左上：CPU 仪表盘 -->
+        <div class="card">
+            <div class="card-title">CPU 使用率</div>
+            <div id="chart-cpu-gauge" class="chart"></div>
+        </div>
+
+        <!-- 中上：内存仪表盘 -->
+        <div class="card">
+            <div class="card-title">内存使用</div>
+            <div id="chart-memory" class="chart"></div>
+        </div>
+
+        <!-- 右上：Swap 仪表盘 -->
+        <div class="card">
+            <div class="card-title">Swap 交换分区</div>
+            <div id="chart-swap" class="chart"></div>
+        </div>
+
+        <!-- 左中：各核心 CPU -->
+        <div class="card card-wide">
+            <div class="card-title">各核心 CPU 使用率</div>
+            <div id="chart-per-core" class="chart"></div>
+        </div>
+
+        <!-- 右中：磁盘使用 -->
+        <div class="card card-wide">
+            <div class="card-title">磁盘使用</div>
+            <div id="chart-disk" class="chart"></div>
+        </div>
+
+        <!-- 左下：CPU 消耗 TOP 进程 -->
+        <div class="card">
+            <div class="card-title">CPU 消耗 TOP</div>
+            <div id="chart-top-cpu" class="chart"></div>
+        </div>
+
+        <!-- 右下：内存消耗 TOP 进程 -->
+        <div class="card">
+            <div class="card-title">内存消耗 TOP</div>
+            <div id="chart-top-mem" class="chart"></div>
+        </div>
+
+    </div>
+
+    <!-- ========== 底部刷新提示 ========== -->
+    <div class="footer">
+        每 3 秒自动刷新 | <span id="last-update">--</span>
+    </div>
+
+
+    <script>
+    // ============================================================
+    // 初始化所有 ECharts 图表实例
+    // ============================================================
+    var cpuGauge = echarts.init(document.getElementById('chart-cpu-gauge'));
+    var memoryChart = echarts.init(document.getElementById('chart-memory'));
+    var swapChart = echarts.init(document.getElementById('chart-swap'));
+    var perCoreChart = echarts.init(document.getElementById('chart-per-core'));
+    var diskChart = echarts.init(document.getElementById('chart-disk'));
+    var topCpuChart = echarts.init(document.getElementById('chart-top-cpu'));
+    var topMemChart = echarts.init(document.getElementById('chart-top-mem'));
+
+    // 窗口大小变化时自动重绘
+    window.addEventListener('resize', function () {
+        cpuGauge.resize();
+        memoryChart.resize();
+        swapChart.resize();
+        perCoreChart.resize();
+        diskChart.resize();
+        topCpuChart.resize();
+        topMemChart.resize();
+    });
+
+    // ============================================================
+    // 颜色常量
+    // ============================================================
+    var COLOR_OK = '#67C23A';     // 正常：绿色
+    var COLOR_WARN = '#E6A23C';   // 警告：橙色
+    var COLOR_DANGER = '#F56C6C'; // 危险：红色
+
+    // 根据数值返回颜色
+    function gaugeColor(percent) {
+        if (percent < 60) return COLOR_OK;
+        if (percent < 85) return COLOR_WARN;
+        return COLOR_DANGER;
+    }
+
+    // ============================================================
+    // 构建仪表盘配置（CPU、内存、Swap 共用）
+    // ============================================================
+    function makeGaugeOption(title, percent) {
+        return {
+            series: [{
+                type: 'gauge',
+                startAngle: 210,
+                endAngle: -30,
+                min: 0,
+                max: 100,
+                center: ['50%', '55%'],
+                radius: '90%',
+                progress: {
+                    show: true,
+                    width: 14,
+                    itemStyle: { color: gaugeColor(percent) }
+                },
+                axisLine: {
+                    lineStyle: {
+                        width: 14,
+                        color: [
+                            [0.6, COLOR_OK],
+                            [0.85, COLOR_WARN],
+                            [1, COLOR_DANGER]
+                        ]
+                    }
+                },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: { show: false },
+                detail: {
+                    valueAnimation: true,
+                    fontSize: 28,
+                    fontWeight: 'bold',
+                    offsetCenter: [0, '70%'],
+                    formatter: '{value}%'
+                },
+                title: {
+                    offsetCenter: [0, '42%'],
+                    fontSize: 13,
+                    color: '#999'
+                },
+                data: [{ value: percent, name: title }]
+            }]
+        };
+    }
+
+    // ============================================================
+    // 更新所有图表
+    // ============================================================
+    function updateCharts(data) {
+        // --- 更新顶部信息 ---
+        document.getElementById('sys-hostname').textContent = data.system.hostname;
+        document.getElementById('sys-os').textContent = data.system.os;
+        document.getElementById('sys-uptime').textContent = '运行: ' + data.system.uptime;
+        document.getElementById('sys-time').textContent = data.timestamp;
+        document.getElementById('last-update').textContent = data.timestamp;
+
+        // --- CPU 仪表盘 ---
+        cpuGauge.setOption(makeGaugeOption('CPU', Math.round(data.cpu.percent)));
+
+        // --- 内存仪表盘 ---
+        var memOpt = makeGaugeOption('内存', Math.round(data.memory.percent));
+        // 在仪表盘下方加文字说明
+        memOpt.series[0].detail.formatter = function (v) {
+            return data.memory.used_gb + ' / ' + data.memory.total_gb + ' GB';
+        };
+        memOpt.series[0].detail.fontSize = 16;
+        memoryChart.setOption(memOpt);
+
+        // --- Swap 仪表盘 ---
+        swapChart.setOption(makeGaugeOption('Swap', Math.round(data.memory.swap_percent)));
+
+        // --- 各核心 CPU 柱状图 ---
+        var cores = data.cpu.per_core.map(function (v, i) { return '核' + i; });
+        var coreVals = data.cpu.per_core;
+        perCoreChart.setOption({
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: cores, axisLabel: { fontSize: 10 } },
+            yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+            series: [{
+                type: 'bar',
+                data: coreVals,
+                itemStyle: {
+                    color: function (params) {
+                        return new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#409EFF' },
+                            { offset: 1, color: '#79bbff' }
+                        ]);
+                    },
+                    borderRadius: [4, 4, 0, 0]
+                },
+                label: { show: true, position: 'top', formatter: '{c}%', fontSize: 10 }
+            }],
+            grid: { top: 20, right: 20, bottom: 30, left: 40 }
+        });
+
+        // --- 磁盘使用横向柱状图 ---
+        var diskNames = data.disks.map(function (d) { return d.mountpoint; });
+        var diskPcts = data.disks.map(function (d) { return d.percent; });
+        var diskTexts = data.disks.map(function (d) { return d.used_gb + ' / ' + d.total_gb + ' GB'; });
+        diskChart.setOption({
+            tooltip: { trigger: 'axis', formatter: function (p) { return p[0].name + ': ' + p[0].value + '%'; } },
+            xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+            yAxis: { type: 'category', data: diskNames, axisLabel: { fontSize: 11 } },
+            series: [{
+                type: 'bar',
+                data: diskPcts,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function (p) { return diskTexts[p.dataIndex]; },
+                    fontSize: 10,
+                    color: '#666'
+                },
+                itemStyle: {
+                    color: function (params) {
+                        return gaugeColor(params.value);
+                    },
+                    borderRadius: [0, 4, 4, 0]
+                }
+            }],
+            grid: { top: 10, right: 100, bottom: 20, left: 80 }
+        });
+
+        // --- CPU TOP 进程 ---
+        var cpuNames = data.processes.top_cpu.map(function (p) { return p.name; });
+        var cpuVals = data.processes.top_cpu.map(function (p) { return p.value; });
+        topCpuChart.setOption({
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+            yAxis: { type: 'category', data: cpuNames.reverse(), axisLabel: { fontSize: 10 } },
+            series: [{
+                type: 'bar',
+                data: cpuVals.reverse(),
+                itemStyle: {
+                    color: function (params) {
+                        return new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            { offset: 0, color: '#f56c6c' },
+                            { offset: 1, color: '#fab6b6' }
+                        ]);
+                    },
+                    borderRadius: [0, 4, 4, 0]
+                },
+                label: { show: true, position: 'right', formatter: '{c}%', fontSize: 10 }
+            }],
+            grid: { top: 10, right: 35, bottom: 20, left: 65 }
+        });
+
+        // --- 内存 TOP 进程 ---
+        var memNames = data.processes.top_mem.map(function (p) { return p.name; });
+        var memVals = data.processes.top_mem.map(function (p) { return p.value; });
+        topMemChart.setOption({
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+            yAxis: { type: 'category', data: memNames.reverse(), axisLabel: { fontSize: 10 } },
+            series: [{
+                type: 'bar',
+                data: memVals.reverse(),
+                itemStyle: {
+                    color: function (params) {
+                        return new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            { offset: 0, color: '#409eff' },
+                            { offset: 1, color: '#a0cfff' }
+                        ]);
+                    },
+                    borderRadius: [0, 4, 4, 0]
+                },
+                label: { show: true, position: 'right', formatter: '{c}%', fontSize: 10 }
+            }],
+            grid: { top: 10, right: 35, bottom: 20, left: 65 }
+        });
+    }
+
+    // ============================================================
+    // AJAX 轮询：每 3 秒从后端取数据并刷新图表
+    // ============================================================
+    function fetchMetrics() {
+        fetch('/api/metrics')
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                updateCharts(data);
+            })
+            .catch(function (err) {
+                console.error('获取数据失败:', err);
+            });
+    }
+
+    // 首次加载
+    fetchMetrics();
+    // 定时刷新
+    setInterval(fetchMetrics, 3000);
+
+    </script>
+
+</body>
+</html>
