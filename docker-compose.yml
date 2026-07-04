@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  monitor:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./monitor.db:/app/monitor.db
+    restart: unless-stopped
