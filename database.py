@@ -50,12 +50,13 @@ def init_db():
 
 def insert_metrics(data: dict):
     conn = get_conn()
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """INSERT INTO metrics
            (timestamp, cpu_percent, memory_percent, swap_percent, disk_json, net_sent_mb, net_recv_mb)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
-            data["timestamp"],
+            ts,
             data["cpu"]["percent"],
             data["memory"]["percent"],
             data["memory"]["swap_percent"],

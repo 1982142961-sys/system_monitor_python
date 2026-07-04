@@ -17,11 +17,11 @@ from alert import check_alerts
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "sysmonitor-secret"
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # 全局变量：保存最新一次采集结果（后台线程写，API 读）
 _latest_data: dict = {}
-_db_ticks = 0  # 计数器，每 20 次（约 60 秒）入库一次
+_db_ticks = 0  # 计数器，每 3 次（约 9 秒）入库一次
 
 
 # ── 后台采集线程 ──────────────────────────────────────
@@ -38,11 +38,12 @@ def _collect_loop():
             # 每 3 秒通过 WebSocket 推送
             socketio.emit("metrics_update", data)
 
-            # 每 60 秒入库 + 告警检测
+            # 每 9 秒入库 + 告警检测
             _db_ticks += 1
-            if _db_ticks >= 20:
+            if _db_ticks >= 3:
                 _db_ticks = 0
                 insert_metrics(data)
+                print(f"[DB] 已入库, CPU={data['cpu']['percent']:.1f}%, MEM={data['memory']['percent']:.1f}%")
                 cleanup_old_data()
 
                 # 告警检测
