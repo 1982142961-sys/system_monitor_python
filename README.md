@@ -12,8 +12,8 @@
 - **历史趋势图** —— 最近 60 分钟 CPU / 内存折线图，支持拖拽缩放
 - **超阈值告警** —— CPU / 内存 / 磁盘超 90% 自动提醒，5 分钟防重复
 - **数据持久化** —— SQLite（默认）或 MySQL，每分钟自动入库
-- **CSV 导出** —— `/api/export?format=csv` 一键下载历史数据
-- **配置分离** —— 所有参数集中在 `config.yaml`，修改无需改代码
+- **CSV 导出** —— 一键下载历史数据为 CSV 文件
+- **配置分离** —— 所有参数集中在 config.yaml 配置文件，修改无需改代码
 - **Docker 一键部署** —— 自带 Dockerfile 和 docker-compose.yml
 
 ---
@@ -109,7 +109,7 @@ system_monitor/
 | `GET /api/metrics` | 最新系统指标 JSON |
 | `GET /api/history` | 最近 60 分钟历史数据 |
 | `GET /api/alerts` | 最近 30 分钟告警记录 |
-| `GET /api/export?format=csv` | 导出 CSV（支持 `&minutes=120`） |
+| `GET /api/export?format=csv` | 导出 CSV 历史数据 |
 
 WebSocket 事件：
 - `metrics_update` —— 实时指标推送
