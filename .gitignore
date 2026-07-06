@@ -19,3 +19,6 @@ Desktop.ini
 # 临时文件
 *.tmp
 *.log
+
+# 数据库文件
+*.db
